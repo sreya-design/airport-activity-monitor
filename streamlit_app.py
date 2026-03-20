@@ -335,7 +335,7 @@ def load_models():
     import torchvision.transforms as T
     from torchvision.models import efficientnet_b0, EfficientNet_B0_Weights
 
-    detector = YOLO("runs/detect/aircraft_cpu/weights/best.pt")
+    detector = YOLO("best.pt")
 
     weights = EfficientNet_B0_Weights.IMAGENET1K_V1
     classifier = efficientnet_b0(weights=weights)
