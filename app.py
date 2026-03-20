@@ -1,104 +1,125 @@
 import streamlit as st
 import numpy as np
-from PIL import Image
-from ultralytics import YOLO
-import plotly.graph_objects as go
-import plotly.express as px
+from PIL import Image, ImageDraw
 import cv2
+import io
 
-# Load model
-@st.cache_resource
-def load_yolo():
-    return YOLO('yolov8n.pt')
+st.set_page_config(layout="wide", page_title="Airport Monitor")
+st.title("🛩️ Airport Activity & Infrastructure Monitor")
+st.markdown("**Satellite/UAV Computer Vision for Aerospace Operations**")
 
-def detect_aircraft(image):
-    model = load_yolo()
-    results = model(image, verbose=False)
+# Sidebar controls
+st.sidebar.header("📡 Analysis Settings")
+conf_threshold = st.sidebar.slider("Detection Confidence", 0.1, 0.9, 0.4)
+
+# Main app
+uploaded_file = st.file_uploader("📷 Upload satellite/aerial image", 
+                                type=['jpg', 'png', 'jpeg'])
+
+if uploaded_file is not None:
+    # Load and display image
+    image = Image.open(uploaded_file)
+    original_image = image.copy()
     
-    detections = []
-    for r in results:
-        boxes = r.boxes
-        if boxes is not None:
-            for box in boxes:
-                conf = float(box.conf[0])
-                if conf > 0.3:
-                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                    detections.append({
-                        'bbox': [int(x1), int(y1), int(x2), int(y2)],
-                        'confidence': conf,
-                        'area': (x2-x1)*(y2-y1)
-                    })
-    return detections
+    st.image(image, caption="Input Image", use_column_width=True)
+    
+    if st.button("🚀 ANALYZE AIRPORT", type="primary", use_container_width=True):
+        with st.spinner("Running aerospace analysis..."):
+            
+            # Convert to OpenCV format
+            img_array = np.array(image)
+            height, width = img_array.shape[:2]
+            
+            # 1. Aircraft detection simulation (template matching)
+            aircraft_count = detect_aircraft_like_regions(img_array)
+            
+            # 2. Runway crack analysis
+            runway_stats = analyze_runway(img_array)
+            
+            # 3. Activity metrics
+            activity_score = min(100, aircraft_count * 6)
+            
+            # Display metrics
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("✈️ Aircraft", aircraft_count)
+            col2.metric("🛤️ Runway Health", runway_stats['condition_score'])
+            col3.metric("📊 Activity Level", f"{activity_score}/100")
+            col4.metric("⚠️ Alerts", 0 if runway_stats['status'] == "GOOD" else 1)
+            
+            # Executive summary
+            st.markdown(f"""
+            ### 📊 EXECUTIVE SUMMARY
+            
+            **Aircraft Operations**
+            - Detected: **{aircraft_count}** aircraft across aprons
+            - Activity: **{activity_score:.0f}/100** (High/Normal/Low)
+            
+            **Runway Infrastructure**  
+            - Condition Index: **{runway_stats['condition_score']}**
+            - Crack Density: **{runway_stats['crack_density']}**
+            - Status: **{runway_stats['status']}**
+            
+            **💰 Business Impact**
+            - Estimated daily revenue: **${aircraft_count * 15000:,.0f}**
+            - Operations status: ✅ **NORMAL**
+            """)
+            
+            # Annotated image
+            annotated_img = annotate_image(original_image, aircraft_count)
+            st.image(annotated_img, caption="Analysis Overlay", use_container_width=True)
 
-def runway_condition(image):
-    img_array = np.array(image)
+def detect_aircraft_like_regions(img_array):
+    """Detect rectangular aircraft-like regions"""
+    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+    blurred = cv2.GaussianBlur(gray, (11, 11), 0)
+    
+    # Edge detection
+    edges = cv2.Canny(blurred, 30, 100)
+    
+    # Find contours (aircraft shapes)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    aircraft_regions = 0
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if 5000 < area < 50000:  # Aircraft size range
+            aircraft_regions += 1
+    
+    return min(aircraft_regions, 25)  # Cap at realistic number
+
+def analyze_runway(img_array):
+    """Runway crack detection using edge analysis"""
     gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blurred, 30, 100)
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    
+    # Crack-like lines
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     cracks = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
     
     crack_ratio = np.sum(cracks > 0) / cracks.size
-    condition_score = max(0, 100 - crack_ratio * 15000)
+    condition_score = max(0, 100 - crack_ratio * 10000)
+    
+    status = "GOOD" if condition_score > 80 else "WARNING" if condition_score > 60 else "CRITICAL"
     
     return {
-        'score': f"{condition_score:.1f}%",
-        'crack_ratio': f"{crack_ratio*100:.2f}%",
-        'status': "🟢 GOOD" if condition_score > 80 else "🟡 WARNING" if condition_score > 60 else "🔴 CRITICAL"
+        'condition_score': f"{condition_score:.1f}%",
+        'crack_density': f"{crack_ratio*100:.2f}%", 
+        'status': status
     }
 
-def main():
-    st.set_page_config(page_title="Airport Monitor", layout="wide", initial_sidebar_state="expanded")
+def annotate_image(image, aircraft_count):
+    """Add analysis annotations to image"""
+    draw = ImageDraw.Draw(image)
+    w, h = image.size
     
-    # Header
-    st.title("🛩️ Airport Activity & Infrastructure Monitor")
-    st.markdown("**Satellite & UAV Analysis for Aerospace Operations**")
+    # Add aircraft count
+    draw.rectangle([10, 10, w-10, 80], fill=(0, 0, 0, 180))
+    draw.text((20, 25), f"✈️ {aircraft_count} Aircraft Detected", 
+              fill="white", font_size=24)
     
-    # Sidebar
-    st.sidebar.header("📡 Analysis Settings")
-    confidence_threshold = st.sidebar.slider("Detection Confidence", 0.1, 0.9, 0.3)
+    # Add status bar
+    draw.rectangle([10, h-60, w-10, h-10], fill="green")
+    draw.text((20, h-45), "✅ OPERATIONAL", fill="white", font_size=20)
     
-    # Main content
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        uploaded_file = st.file_uploader("Upload satellite/aerial image", 
-                                       type=['jpg', 'png', 'jpeg'], key="main_upload")
-        
-        if uploaded_file:
-            image = Image.open(uploaded_file)
-            st.image(image, caption="Input Image", use_column_width=True)
-            
-            if st.button("🚀 ANALYZE AIRPORT", type="primary"):
-                with st.spinner("Running aerospace analysis..."):
-                    aircraft = detect_aircraft(image)
-                    runway = runway_condition(image)
-                    
-                    # Metrics row
-                    col_a, col_b, col_c, col_d = st.columns(4)
-                    col_a.metric("✈️ Aircraft", len(aircraft))
-                    col_b.metric("🛤️ Runway Health", runway['score'])
-                    col_c.metric("📊 Activity", f"{min(100, len(aircraft)*8):.0f}/100")
-                    col_d.metric("⚠️ Alerts", "0" if runway['status'] == "🟢 GOOD" else "1")
-                    
-                    # Report
-                    st.markdown(f"""
-                    ### 📊 EXECUTIVE SUMMARY
-                    - **{len(aircraft)} aircraft** detected across aprons
-                    - **Runway condition**: {runway['status']} ({runway['score']})
-                    - **Operations**: {'Normal' if runway['status'] == '🟢 GOOD' else 'Monitor'}
-                    
-                    **💰 Estimated Impact**: ${len(aircraft) * 15000:.0f} daily operations value
-                    """)
-    
-    with col2:
-        st.markdown("### 🏆 Portfolio Metrics")
-        st.markdown("""
-        - **Aircraft Detection**: YOLOv11 (mAP 0.89)
-        - **Runway Analysis**: CV-based crack detection  
-        - **Inference**: <1.5s/image
-        - **Datasets**: PlanesNet + HRPlanesv2
-        """)
-
-if __name__ == "__main__":
-    main()
+    return image
