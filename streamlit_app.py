@@ -1,8 +1,11 @@
+import os
+os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "0"
+os.environ["OCV_AVOID_IMSHOW"] = "1"
 import streamlit as st
 import numpy as np
 from PIL import Image
 import tempfile
-import os
+
 
 st.set_page_config(
     page_title="AeroScan — Aircraft Detector",
