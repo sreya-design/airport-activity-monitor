@@ -1,8 +1,6 @@
+numpy<2.0.0
 streamlit
 ultralytics
-torch
-torchvision
 pillow
 plotly
-numpy
 opencv-python-headless
